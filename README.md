@@ -16,7 +16,7 @@
     bash experiments.sh data              # all experiments
     python plots.py --data data           # figures
     python validation_tests.py --data data
-Single runs: `python run.py --data data --C 0.1 --E 5`, Ray: `--parallel [--gpus 0.25]` (4 clients/round, 1 CPU each, `--gpus` = GPU fraction per actor),
+Single runs: `python run.py --data data --C 0.1 --E 10`, Ray: `--parallel [--gpus 0.25]` (4 clients/round, 1 CPU each, `--gpus` = GPU fraction per actor),
 noise: `--b 0.2`. `--synthetic` replaces the data with random class prototypes for a quick smoke test.
 Each client's local data is split 80% train / 20% validation; the provided `test_data.npy` is the held-out test set (never noised, never trained on). Noise is added to train/val images only (pixels are in [0,1]).
 Part 1 (sequential) and Part 2 use the same `fedavg`; actors are created only for the selected clients each round and killed afterwards.

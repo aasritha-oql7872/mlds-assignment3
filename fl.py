@@ -63,7 +63,7 @@ class Client:
         return local_train(state, self.data, epochs, lr, bs, seed, dev)
 
 
-def fedavg(clients, rounds=100, C=0.1, epochs=1, lr=0.05, bs=32, seed=0, parallel=False, n_per_round=None, gpus=0.0):
+def fedavg(clients, rounds=100, C=0.1, epochs=1, lr=0.03, bs=32, seed=0, parallel=False, n_per_round=None, gpus=0.0):
     """clients: output of split_clients. Returns (global model, history dict)."""
     r = np.random.RandomState(seed); torch.manual_seed(seed)
     model = make_model(); k = n_per_round or max(1, int(round(C * len(clients))))

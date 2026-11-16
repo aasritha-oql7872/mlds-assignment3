@@ -40,7 +40,7 @@ if nb:
     plt.xlabel("noise scale b"); plt.ylabel("accuracy"); plt.legend(); plt.tight_layout(); plt.savefig("figures/part2_noise.png", dpi=150); plt.close()
 
 # non-standard plot: client participation heatmap (rows=clients, cols=rounds, colour=client's local val acc after local training)
-n = "C0.1_E1_b0.0_seq_s0"
+n = "C0.1_E10_b0.0_seq_s0"
 if n in R:
     h = R[n]; M = np.full((100, len(h["selected"])), np.nan)
     for t, (s, v) in enumerate(zip(h["selected"], h["local_val_acc"])): M[s, t] = v
