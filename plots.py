@@ -17,7 +17,7 @@ def curves(name, title):
 for n in R: curves(n, n)
 
 # data distribution: overall + 5 users
-cl = fl.load_clients(a.data, 0, a.synthetic); fig, ax = plt.subplots(2, 3, figsize=(12, 6))
+cl, _ = fl.load_data(a.data, 0, a.synthetic); fig, ax = plt.subplots(2, 3, figsize=(12, 6))
 allc = np.bincount(np.concatenate([c["y"] for c in cl]), minlength=62)
 ax[0, 0].bar(range(62), allc); ax[0, 0].set_title("all 100 users")
 for x, i in zip(ax.flat[1:], np.random.RandomState(0).choice(len(cl), 5, replace=False)):

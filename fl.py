@@ -4,32 +4,30 @@ import numpy as np, torch, torch.nn as nn, torch.nn.functional as F
 import ray
 
 
-def load_clients(path, seed=0, synthetic=False):
-    """Returns list of dicts {x:(n,784) float32, y:(n,) int64}. `path`: dir of LEAF-style json files
-    ({"users": [...], "user_data": {u: {"x": [...], "y": [...]}}}); if it holds train/ and test/ subdirs both are merged."""
-    users = {}
+def load_data(path, seed=0, synthetic=False):
+    """Returns (clients, test): clients = list of {x:(n,784), y:(n,)}, test = (x, y) held-out set.
+    Expects train_data.npy / test_data.npy in `path` (train_data[i]['images'|'labels'], test_data[0][...])."""
     if synthetic:
         r = np.random.RandomState(seed); P = np.random.RandomState(123).rand(62, 784)
-        for u in range(100):
-            y = r.randint(0, 62, 60); users[u] = ((P[y] + 0.3 * r.rand(60, 784)).astype("float32"), y)
+        def mk(n): y = r.randint(0, 62, n); return {"images": (P[y] + 0.3 * r.rand(n, 784)).astype("float32"), "labels": y}
+        tr, te = [mk(60) for _ in range(100)], [mk(500)]
     else:
-        for f in sorted(glob.glob(os.path.join(path, "**", "*.json"), recursive=True)):
-            for u, d in json.load(open(f))["user_data"].items():
-                x, y = np.array(d["x"], dtype="float32").reshape(len(d["y"]), -1), np.array(d["y"])
-                users[u] = (np.concatenate([users[u][0], x]), np.concatenate([users[u][1], y])) if u in users else (x, y)
-    return [{"x": x, "y": y.astype("int64")} for x, y in users.values()]
+        tr = np.load(os.path.join(path, "train_data.npy"), allow_pickle=True)
+        te = np.load(os.path.join(path, "test_data.npy"), allow_pickle=True)
+    flat = lambda d: (np.asarray(d["images"], dtype="float32").reshape(len(d["labels"]), -1), np.asarray(d["labels"]).astype("int64"))
+    clients = [dict(zip("xy", flat(d))) for d in tr]
+    return clients, tuple(torch.from_numpy(a) for a in flat(te[0]))
 
 
 def split_clients(clients, b=0.0, seed=0):
-    """Per client: 20% test (clean), remaining 80/20 train/val. Laplace(b) noise is added to train and val images only."""
+    """Per client 80/20 train/val split. Laplace(b) noise is added to the train and val images (test stays clean)."""
     r = np.random.RandomState(seed); rn = np.random.RandomState(seed + 1); out = []
     for c in clients:
-        p = r.permutation(len(c["y"])); n = len(p); nt = max(1, int(.2 * n)); nv = max(1, int(.2 * (n - nt)))
-        parts = {"test": p[:nt], "val": p[nt:nt + nv], "train": p[nt + nv:]}
+        p = r.permutation(len(c["y"])); nv = max(1, int(.2 * len(p)))
         d = {}
-        for k, i in parts.items():
+        for k, i in (("val", p[:nv]), ("train", p[nv:])):
             x = c["x"][i].copy()
-            if b > 0 and k != "test": x += rn.laplace(0, b, x.shape).astype("float32")
+            if b > 0: x += rn.laplace(0, b, x.shape).astype("float32")
             d[k] = (torch.from_numpy(x), torch.from_numpy(c["y"][i]))
         out.append(d)
     return out
@@ -91,6 +89,5 @@ def fedavg(clients, rounds=100, C=0.1, epochs=1, lr=0.05, bs=32, seed=0, paralle
     return model, hist
 
 
-def test_accuracy(model, clients):
-    c = sum(evaluate(model, *cl["test"])[1] for cl in clients)
-    return c / sum(len(cl["test"][1]) for cl in clients)
+def test_accuracy(model, test):
+    return evaluate(model, *test)[1] / len(test[1])
