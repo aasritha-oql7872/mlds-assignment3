@@ -6,7 +6,8 @@
 | `run.py` | one training run -> `results/<name>.json` |
 | `experiments.sh` | all sweeps (C, E, Ray run, noise scales b) |
 | `plots.py` | all figures in `figures/` (incl. data distribution and a client-participation heatmap) |
-| `validation_tests.py` | behavioural validation checks (see below) |
+| `experiments_seeds.sh` | seeds 1 and 2 of the noise sweep (error bars) |
+| `validation_tests.py` | 15 behavioural validation checks (see below) |
 
 ## Run on deepdish
     git clone https://github.com/aasritha-oql7872/mlds-assignment3.git && cd mlds-assignment3
@@ -22,6 +23,8 @@ Each client's local data is split 80% train / 20% validation; the provided `test
 Part 1 (sequential) and Part 2 use the same `fedavg`; actors are created only for the selected clients each round and killed afterwards.
 
 ## Validation tests (`validation_tests.py`)
-1. single client, full participation == plain local SGD; 2. `E=0` leaves the model unchanged; 3. global model == hand-computed n_k-weighted mean of client models;
-4. Ray result == sequential result for the same seed; 5. mean |noise| ≈ b and test data stays clean; 6. train/val partition each client and the test set shares no images with client data;
-7. trained model beats random init, and huge noise (b=50) hurts test accuracy; 8. more local epochs lower local training loss.
+1. single client == plain local SGD; 2. `E=0` leaves the model unchanged; 3. global model == hand-computed n_k-weighted mean;
+4. Ray == sequential; 5. mean |noise| ~ b, labels unchanged; 6. train/val partition, test shares no images with clients;
+7. trained beats random init, b=50 noise hurts; 8. more local epochs lower local loss; 9. `lr=0` leaves the model unchanged;
+10. trace of the first 10 rounds (selected clients, weight change, loss); 11. IID >= real split >> label-sorted split;
+12. test accuracy decreases with b. Full-run seeds: `bash experiments_seeds.sh data` (after `experiments.sh`), then `python plots.py --data data`.

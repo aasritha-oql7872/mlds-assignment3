@@ -16,7 +16,7 @@ python3 -m venv ~/fl_env && source ~/fl_env/bin/activate
 pip install -r requirements.txt
 export CUDA_VISIBLE_DEVICES=<idle gpu>       # one GPU max
 # place train_data.npy and test_data.npy in ./data
-python validation_tests.py --data data       # 11 validation checks
+python validation_tests.py --data data       # 15 validation checks
 bash experiments.sh data                     # all sweeps -> results/*.json
 python plots.py --data data                  # all figures -> figures/
 \end{verbatim}
@@ -37,13 +37,40 @@ There are 100 clients, 31{,}825 training images (118--393 per client). Classes a
 0.02 & 1 & 0.397 & 0.394 & 0.406\\0.02 & 5 & 0.606 & 0.597 & 0.595\\0.02 & 10 & 0.600 & 0.580 & 0.587\\
 0.05 & 1 & 0.558 & 0.547 & 0.563\\0.05 & 5 & 0.681 & 0.663 & 0.669\\0.05 & 10 & 0.686 & 0.669 & 0.675\\
 0.1 & 1 & 0.562 & 0.550 & 0.559\\0.1 & 5 & 0.691 & 0.674 & 0.681\\\textbf{0.1} & \textbf{10} & \textbf{0.727} & \textbf{0.706} & \textbf{0.716}\\\bottomrule\end{tabular}\caption{Final accuracy after 500 rounds (C $\le$ 10\% as required).}\end{table}
-\begin{figure}[H]\centering\includegraphics[width=.8\linewidth]{part1_C_E}\caption{Validation accuracy vs.\ round for all $(C,E)$.}\end{figure}
+\begin{figure}[H]\centering\includegraphics[width=\linewidth]{part1_C_E}\caption{Training (left) and validation (right) accuracy vs.\ round for all $(C,E)$.}\end{figure}
 More local epochs and more clients per round both help: $E{=}1\to 10$ raises test accuracy by 11--18 points at every $C$, but $E{=}5$ and $E{=}10$ are nearly equal for $C\le 0.05$ (extra local epochs on few clients mostly fit those clients' own distributions), whereas at $C{=}0.1$ the gain continues (0.681 $\to$ 0.716). Larger $C$ averages more clients, reducing the variance of the update, so curves are smoother and higher. \textbf{Chosen hyperparameters: $C=0.1$, $E=10$, lr $0.03$, batch 32, 500 rounds; test accuracy $=0.716$.} Train and validation are close (0.727 vs.\ 0.706), so there is little overfitting; the validation curve is still creeping upward at round 500.
 
 \subsection*{1.5 Parallel clients with Ray}
 Each selected client is a Ray \texttt{Actor} (\texttt{num\_cpus=1}, optional \texttt{--gpus} fraction $\le 1$) created only for the 4 clients sampled in that round and killed afterwards; only the global weights go to the actor and only updated weights return. With 4 clients/round ($C{=}0.04$), $E{=}10$: train 0.664, validation 0.642, \textbf{test 0.658}. This is lower than $C{=}0.1$ for the reason above (fewer clients per round), and consistent with the sequential $C{=}0.05$ result (0.675).
 \begin{figure}[H]\centering\includegraphics[width=.9\linewidth]{part1_ray}\caption{Ray run, 4 clients per round.}\end{figure}
 
+
+\subsection*{Part 1: edge cases}
+\begin{itemize}
+\item \emph{Non-IID, unbalanced clients (118--393 samples)}: averaging must be weighted by $n_k$, not $1/K$ (test 3).
+\item \emph{Test leakage}: the test set is a separate file, never noised or trained on; no test image occurs in client data (test 6).
+\item \emph{Ray determinism and memory}: actors are created only for the selected clients and killed each round; per-client seeds are drawn on the server so Ray and sequential runs can be compared (test 4).
+\item \emph{Divergence}: large learning rates diverge under non-IID updates; found by sweeping lr (see Setup).
+\item \emph{Degenerate settings}: $E{=}0$ or lr $=0$ must leave the model untouched (tests 2, 9); a single participating client must reduce to ordinary SGD (test 1); validation size is $\max(1,\lfloor 0.2n\rfloor)$, and the smallest client (118 samples) never has an empty split.
+\end{itemize}
+\subsection*{Part 1: validation tests (\texttt{python validation\_tests.py --data data}; all 15 pass)}
+\begin{enumerate}
+\item \textbf{Single client $=$ plain SGD.} FedAvg with one client reproduces local training (max weight diff $<10^{-6}$): checks the server/aggregation plumbing.
+\item \textbf{$E{=}0$.} The global model stays at its initialisation.
+\setcounter{enumi}{2}
+\item \textbf{Weighted aggregation.} For the largest and smallest clients (weights 0.768/0.232) the global model equals the hand-computed $n_k$-weighted mean.
+\item \textbf{Ray $=$ sequential.} Same seed gives the same model (max diff $2.2\times10^{-8}$ on deepdish, 0 on CPU).
+\setcounter{enumi}{5}
+\item \textbf{Partition / no leakage.} Train+val sizes equal client sizes; test images do not occur in client data.
+\item \textbf{Learning happens.} After 30 rounds test accuracy is 0.170 vs.\ 0.022 for a random initialisation ($\approx 1/62$).
+\item \textbf{More local epochs lowers local loss} ($E{=}1\to10$ on one client: 1054 $\to$ 992).
+\item \textbf{lr $=0$} leaves the model unchanged even with 5 local epochs.
+\item \textbf{First 10 rounds traced.} Each round selects 10 distinct clients, the global model moves every round (max weight change 0.017 in round 1 shrinking to 0.0065 by round 10), and the global train loss goes $3.917\to3.701$ (printed per round by the script).
+\item \textbf{Heterogeneity.} Re-dealing the pooled data over the same client sizes: IID 0.357, real by-writer split 0.326, label-sorted (1--2 classes/client) 0.029 test accuracy after 100 rounds (mean of 2 seeds). FedAvg degrades with label skew as expected; the real FEMNIST split is only mildly non-IID (each client has $\sim$55 of 62 classes), so its gap to IID is small --- a 30-round version of this test was too noisy to show it, so it was lengthened.
+\end{enumerate}
+\subsection*{Part 1: non-standard plot --- client participation heatmap}
+Rows are the 100 clients, columns are rounds, colour is the selected client's local validation accuracy after its local update (blank = not selected). Early rounds show many poor local models (dark) that brighten as the global model improves; no row is visibly empty or consistently dark, consistent with random 10\% sampling covering all clients.
+\begin{figure}[H]\centering\includegraphics[width=.9\linewidth]{participation_heatmap}\caption{Client participation and local accuracy ($C{=}0.1$, $E{=}10$).}\end{figure}
 \section{Part 2: Laplace mechanism}
 Each train and validation image gets i.i.d.\ Laplace$(0,b)$ noise added once, before training (the test set is clean; pixels are in $[0,1]$). Settings are those chosen in Part 1 ($C{=}0.1,E{=}10$). Fig.~\ref{fig:b02} shows the curves for $b{=}0.2$.
 \begin{figure}[H]\centering\includegraphics[width=.9\linewidth]{part2_b0.2}\caption{Training/validation loss and accuracy vs.\ rounds with $b=0.2$.}\label{fig:b02}\end{figure}
@@ -54,35 +81,29 @@ test acc & 0.716 & 0.712 & 0.707 & 0.672 & 0.534 & 0.317 & 0.103\\\bottomrule\en
 \begin{figure}[H]\centering\includegraphics[width=.55\linewidth]{part2_noise}\caption{Final train and test accuracy vs.\ noise scale $b$.}\end{figure}
 \textbf{Discussion.} Test accuracy decreases monotonically with $b$: negligible loss up to $b{=}0.1$ ($-0.9$ pts), moderate at $0.2$ ($-4.4$), severe at $0.5$ ($-18$) and near chance (1.6\%) at $b{=}2$ (0.103). Training accuracy does \emph{not} decrease: because the noise is drawn once, the MLP can memorise each client's fixed noisy images (train 0.835 at $b{=}2$) while generalising to nothing; the independently-noised validation set and the clean test set expose this, so the train--test gap, not train accuracy, measures the damage. I would use $\mathbf{b=0.1}$: it keeps test accuracy within one point of the noise-free model while still adding per-pixel noise of mean magnitude 0.1 (10\% of the pixel range); $b{=}0.2$ is the largest value that still keeps accuracy above 0.67. Caveat: this per-pixel noise gives no strong formal guarantee --- the $\ell_1$ sensitivity of an image with pixels in $[0,1]$ is up to 784, so $b{=}0.1$ corresponds to $\varepsilon\approx 784/0.1$ for replacing an entire image; the privacy it offers is empirical (obscuring pixels), not a meaningful $\varepsilon$-DP bound.
 
-\section{Edge cases, validation tests, and non-standard plot}
-\subsection*{Edge cases considered}
+
+\subsection*{Part 2: edge cases}
 \begin{itemize}
-\item \emph{Non-IID, unbalanced clients (118--393 samples)}: averaging must be weighted by $n_k$, not $1/K$; verified by test 3.
-\item \emph{Clients re-sampled / not sampled}: sampling is without replacement within a round; every client can recur across rounds (heatmap).
-\item \emph{Test leakage}: test set is a separate file, never noised or trained on; test 6 checks no test image appears in client data. Noise is added to train/validation only.
-\item \emph{Noise changing the split or labels}: noise uses its own RNG, so splits and labels are identical with and without noise (test 5), making runs with different $b$ comparable.
-\item \emph{Ray determinism and memory}: actors are created only for selected clients and killed each round; per-client seeds are drawn on the server so Ray and sequential runs are comparable (test 4).
-\item \emph{Divergence}: large learning rates diverge under non-IID updates; found by sweeping lr, and the threshold is documented above.
-\item \emph{Tiny/empty splits}: validation size is $\max(1,\lfloor 0.2n\rfloor)$; the smallest client has 118 samples so no split is empty.
+\item \emph{Noise must not change splits or labels}: noise uses its own RNG, so runs with different $b$ see the same samples and labels (test 5), making them comparable.
+\item \emph{Noise only on train/validation}: the test set stays clean, so test accuracy measures generalisation to real data (test 6).
+\item \emph{Noise statistics}: Laplace$(b)$ has $E|\varepsilon|=b$; the measured mean is 0.500 for $b{=}0.5$ (test 5). Noise is added without clipping to $[0,1]$, as the assignment specifies ($X'=X+\varepsilon$).
+\item \emph{Memorisation}: a fixed noise draw can be memorised, so train accuracy is not a valid quality measure under noise; validation and test are used instead.
+\item \emph{Extreme noise}: with $b{=}50$ the model should be at chance (test 7), and test accuracy should fall monotonically with $b$ (test 12).
 \end{itemize}
-\subsection*{Validation tests (\texttt{python validation\_tests.py --data data}; all 11 pass on deepdish)}
+\subsection*{Part 2: validation tests (same script)}
 \begin{enumerate}
-\item \textbf{Single client = plain SGD.} FedAvg with one client reproduces local training exactly (max weight diff $<10^{-6}$): checks the server/aggregation plumbing.
-\item \textbf{$E{=}0$.} With zero local epochs the global model stays at its initialisation: no hidden state changes.
-\item \textbf{Weighted aggregation.} For the largest and smallest clients (weights 0.768/0.232) the global model equals the hand-computed $n_k$-weighted mean.
-\item \textbf{Ray $=$ sequential.} Same seed gives the same model (max diff $2.2\times10^{-8}$ on deepdish).
-\item \textbf{Noise statistics.} Mean $|\varepsilon|$ for $b{=}0.5$ is 0.500 (Laplace$(b)$ has $E|\varepsilon|=b$); labels unchanged.
-\item \textbf{Partition / no leakage.} Train+val sizes equal client sizes; test images do not occur in client data.
-\item \textbf{Behaviour.} After 30 rounds test accuracy is 0.176 vs.\ 0.022 for a random init ($\approx 1/62$); with $b{=}50$ it falls to 0.028.
-\item \textbf{More local epochs lowers local loss} ($E{=}1\to10$: 1036 $\to$ 992).
+\setcounter{enumi}{4}
+\item \textbf{Noise statistics:} mean $|\varepsilon|=0.500$ for $b{=}0.5$; labels identical with and without noise.
+\setcounter{enumi}{6}
+\item \textbf{Extreme noise:} $b{=}50$ gives test accuracy 0.028 vs.\ 0.170 without noise (30 rounds).
+\setcounter{enumi}{11}
+\item \textbf{Monotonicity:} test accuracy after 30 rounds for $b=0,0.5,2$ is $0.170>0.168>0.107$.
 \end{enumerate}
-Beyond these: the $C$/$E$ sweep (more clients or epochs $\Rightarrow$ better) and the noise sweep (monotone test-accuracy decay, train/test gap growing with $b$) match theory.
-
-\subsection*{Non-standard plot: client participation heatmap}
-Rows are the 100 clients, columns are rounds, and colour is the selected client's local validation accuracy after its local update (blank = not selected). Early rounds show many poor local models (dark); they brighten as the global model improves, and no row is visibly empty or consistently dark, consistent with random 10\% sampling covering all clients.
-\begin{figure}[H]\centering\includegraphics[width=.9\linewidth]{participation_heatmap}\caption{Client participation and local accuracy ($C{=}0.1$, $E{=}10$).}\end{figure}
-
-\section{With an additional 3 months, what else would I test?}
+The full sweep above (test accuracy falling from 0.716 to 0.103) is the main quantitative evidence; the train--validation gap grows from 0.02 at $b{=}0$ to 0.79 at $b{=}2$.
+\subsection*{Part 2: non-standard plot --- noisy examples and train--validation gap}
+Top: the same test image at each noise level (clipped to $[0,1]$ for display only): the stroke stays visible up to $b\approx0.2$ and is buried by $b\ge0.5$, matching where test accuracy collapses. Bottom: the train--validation accuracy gap versus $b$, which quantifies the memorisation of the fixed noise.
+\begin{figure}[H]\centering\includegraphics[width=\linewidth]{part2_noise_examples_gap}\caption{Noisy images (top) and train$-$val accuracy gap vs.\ $b$ (bottom).}\end{figure}
+\section{Given an additional 3 months, what other validation tests and experiments would I perform?}
 \begin{itemize}
 \item Multiple seeds (e.g.\ 10) with confidence intervals for every table entry, so that differences like 0.675 vs.\ 0.669 can be called significant.
 \item Fresh noise each epoch/round vs.\ a fixed noise draw, to separate memorisation of noise from true noise robustness.

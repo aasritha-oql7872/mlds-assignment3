@@ -14,7 +14,7 @@ def seeds(seed, n_clients, k):  # mimic fedavg's RNG use for round 1
 
 # 1. FedAvg with a single client == plain local SGD on that client
 m, _ = fl.fedavg(cl[:1], rounds=1, n_per_round=1, epochs=2, seed=3)
-_, sd = seeds(3, 1, 1); st, _, _ = fl.local_train(init(3).state_dict(), cl[0], 2, 0.05, 32, int(sd[0]))
+_, sd = seeds(3, 1, 1); st, _, _ = fl.local_train(init(3).state_dict(), cl[0], 2, 0.03, 32, int(sd[0]))
 ref = fl.make_model(); ref.load_state_dict(st)
 check("single-client FedAvg == local SGD", dist(m, ref) < 1e-6)
 
@@ -26,7 +26,7 @@ check("E=0 leaves initial model unchanged", dist(m, init(0)) < 1e-7)
 big = sorted(range(len(cl)), key=lambda i: len(cl[i]["train"][1]))[-1], sorted(range(len(cl)), key=lambda i: len(cl[i]["train"][1]))[0]
 two = [cl[big[0]], cl[big[1]]]; sel, sd = seeds(5, 2, 2)
 m, _ = fl.fedavg(two, rounds=1, n_per_round=2, epochs=1, seed=5)
-res = [fl.local_train(init(5).state_dict(), two[i], 1, 0.05, 32, int(s)) for i, s in zip(sel, sd)]
+res = [fl.local_train(init(5).state_dict(), two[i], 1, 0.03, 32, int(s)) for i, s in zip(sel, sd)]
 w = np.array([r[1] for r in res], dtype=float); w /= w.sum()
 exp = fl.make_model(); exp.load_state_dict({k: sum(wi * r[0][k] for wi, r in zip(w, res)) for k in res[0][0]})
 check("global == n_k-weighted mean of client models (largest + smallest client)", dist(m, exp) < 1e-6, f"weights {w.round(3)}")
@@ -55,6 +55,32 @@ check("b=50 noise degrades test accuracy", acc(mn) < acc(mt) - 0.05, f"{acc(mn):
 # 8. more local epochs on one client lower its training loss
 l = []
 for E in (1, 10):
-    st, *_ = fl.local_train(init(0).state_dict(), cl[0], E, 0.05, 32, 0); mm = fl.make_model(); mm.load_state_dict(st); l.append(fl.evaluate(mm, *cl[0]["train"])[0])
+    st, *_ = fl.local_train(init(0).state_dict(), cl[0], E, 0.03, 32, 0); mm = fl.make_model(); mm.load_state_dict(st); l.append(fl.evaluate(mm, *cl[0]["train"])[0])
 check("more local epochs -> lower local train loss", l[1] < l[0], f"{l[0]:.2f} -> {l[1]:.2f}")
+
+# 9. lr=0 (no learning) leaves the model unchanged even with many epochs
+m, _ = fl.fedavg(cl, rounds=3, epochs=5, lr=0.0, seed=0)
+check("lr=0 leaves initial model unchanged", dist(m, init(0)) < 1e-7)
+
+# 10. trace of the first 10 rounds: selected clients are distinct, global model moves every round, loss goes down overall
+prev, steps, losses = init(0), [], []
+for t in range(1, 11):
+    mt_, h = fl.fedavg(cl, rounds=t, seed=0); steps.append(dist(mt_, prev)); prev = mt_; losses.append(h["train_loss"][-1])
+    print(f"  round {t:2d}: clients {sorted(h['selected'][-1])} max|dW| vs previous round {steps[-1]:.4f} train loss {losses[-1]:.3f}")
+check("first 10 rounds: 10 distinct clients/round, model changes every round, loss decreases", all(len(set(sel)) == 10 for sel in h["selected"]) and min(steps) > 0 and losses[-1] < losses[0])
+
+# 11. heterogeneity: re-deal the pooled data (a) IID and (b) sorted by label (~1-2 classes per client) over the same client sizes.
+#     Expected: IID >= real by-writer split >> label-sorted split (FedAvg degrades with label skew).
+allx = np.concatenate([c["x"] for c in raw]); ally = np.concatenate([c["y"] for c in raw])
+def redeal(order):
+    out, o = [], 0
+    for c in raw: n = len(c["y"]); out.append({"x": allx[order[o:o + n]], "y": ally[order[o:o + n]]}); o += n
+    return out
+def mean_acc(d): return np.mean([acc(fl.fedavg(fl.split_clients(d, 0.0, 0), rounds=100, seed=s)[0]) for s in (0, 1)])
+a_real, a_iid, a_sort = mean_acc(raw), mean_acc(redeal(np.random.RandomState(0).permutation(len(ally)))), mean_acc(redeal(np.argsort(ally, kind="stable")))
+check("IID >= real split >> label-sorted split (100 rounds, 2 seeds)", a_iid >= a_real > a_sort + 0.1, f"IID {a_iid:.3f}, real {a_real:.3f}, sorted {a_sort:.3f}")
+
+# 12. noise sweep monotonicity (30 rounds): test accuracy decreases with b
+accs = [acc(fl.fedavg(fl.split_clients(raw, bb, 0), rounds=30, seed=0)[0]) for bb in (0.0, 0.5, 2.0)]
+check("test accuracy decreases with noise scale b (0, 0.5, 2)", accs[0] > accs[1] > accs[2], str(np.round(accs, 3)))
 print(f"{sum(ok)}/{len(ok)} passed")
