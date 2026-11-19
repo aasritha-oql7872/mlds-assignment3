@@ -27,4 +27,4 @@ Part 1 (sequential) and Part 2 use the same `fedavg`; actors are created only fo
 4. Ray == sequential; 5. mean |noise| ~ b, labels unchanged; 6. train/val partition, test shares no images with clients;
 7. trained beats random init, b=50 noise hurts; 8. more local epochs lower local loss; 9. `lr=0` leaves the model unchanged;
 10. trace of the first 10 rounds (selected clients, weight change, loss); 11. IID >= real split >> label-sorted split;
-12. test accuracy decreases with b. Full-run seeds: `bash experiments_seeds.sh data` (after `experiments.sh`), then `python plots.py --data data`.
+12. clean/mild noise clearly beats heavy noise (b=2). Full-run seeds: `bash experiments_seeds.sh data` (after `experiments.sh`), then `python plots.py --data data`.

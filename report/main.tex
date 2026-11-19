@@ -88,7 +88,7 @@ test acc & 0.716 & 0.712 & 0.707 & 0.672 & 0.534 & 0.317 & 0.103\\\bottomrule\en
 \item \emph{Noise only on train/validation}: the test set stays clean, so test accuracy measures generalisation to real data (test 6).
 \item \emph{Noise statistics}: Laplace$(b)$ has $E|\varepsilon|=b$; the measured mean is 0.500 for $b{=}0.5$ (test 5). Noise is added without clipping to $[0,1]$, as the assignment specifies ($X'=X+\varepsilon$).
 \item \emph{Memorisation}: a fixed noise draw can be memorised, so train accuracy is not a valid quality measure under noise; validation and test are used instead.
-\item \emph{Extreme noise}: with $b{=}50$ the model should be at chance (test 7), and test accuracy should fall monotonically with $b$ (test 12).
+\item \emph{Extreme noise}: with $b{=}50$ the model should be at chance (test 7), and test accuracy should be clearly lower at large $b$ (test 12).
 \end{itemize}
 \subsection*{Part 2: validation tests (same script)}
 \begin{enumerate}
@@ -97,7 +97,7 @@ test acc & 0.716 & 0.712 & 0.707 & 0.672 & 0.534 & 0.317 & 0.103\\\bottomrule\en
 \setcounter{enumi}{6}
 \item \textbf{Extreme noise:} $b{=}50$ gives test accuracy 0.028 vs.\ 0.170 without noise (30 rounds).
 \setcounter{enumi}{11}
-\item \textbf{Monotonicity:} test accuracy after 30 rounds for $b=0,0.5,2$ is $0.170>0.168>0.107$.
+\item \textbf{Heavy vs.\ mild noise:} after 30 rounds (mean of 2 seeds) $b{=}0$ and $b{=}0.5$ both beat $b{=}2$ by more than 3 points; a strict $b{=}0$ vs.\ $b{=}0.5$ ordering is not tested at 30 rounds because the gap there is within run-to-run noise (0.164 vs.\ 0.169 on deepdish), and is instead shown by the 500-round sweep.
 \end{enumerate}
 The full sweep above (test accuracy falling from 0.716 to 0.103) is the main quantitative evidence; the train--validation gap grows from 0.02 at $b{=}0$ to 0.79 at $b{=}2$.
 \subsection*{Part 2: non-standard plot --- noisy examples and train--validation gap}
